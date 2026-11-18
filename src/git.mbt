@@ -4,6 +4,11 @@
 const BRANCH_NAME = "main"
 
 ///|
+/// 出力のprefix
+/// ちゃんとしたロガーを導入しても良いかもしれない
+const LOG_PREFIX = "git-remote-shareoj: "
+
+///|
 #derive(Debug)
 suberror GitTransportError {
   UnknownCommand(String)
@@ -208,7 +213,7 @@ async fn GitTransport::push(self : Self, args : Array[PushArgs]) -> Unit {
       write_line("ok \{arg.refname}")
     } catch {
       e => {
-        eprintln("git-remote-shareoj: \{@debug.to_string(e)}")
+        eprintln(LOG_PREFIX + "\{@debug.to_string(e)}")
         write_line("error \{arg.refname} push failed; see stderr")
       }
     }
@@ -298,18 +303,19 @@ async fn GitTransport::push_main(
     @fs.read_text(metadata.0),
   )
 
-  eprintln("shareoj says:")
+  eprintln(LOG_PREFIX + "shareoj says:")
   let mut output = push_result.stdout_text()
   let lines = output.split("\n").collect()
   if lines.last() == Some("") {
     let _ = lines.pop()
   }
   for line in lines {
-    eprintln("| \{line}")
+    eprintln(LOG_PREFIX + "| \{line}")
   }
   if push_result.exit_code != 0 {
     if output.contains("tests require paired input/output files") {
       eprintln(
+        LOG_PREFIX +
         "hint: you might have to remove `*.out` from your global gitignore, or add `!*.out` to your repository's `.gitignore`",
       )
     }
@@ -326,13 +332,15 @@ async fn GitTransport::push_main(
     let new_version : UInt32 = conflict_info.group(2).unwrap()
       |> @string.from_str
     if !force {
-      eprintln("hint: use force push to override the remote version.")
+      eprintln(
+        LOG_PREFIX + "hint: use force push to override the remote version.",
+      )
       raise GitTransportError::ShareOJRejected(
         Failure("version conflict: local \{old_version}, remote \{new_version}"),
       )
     }
 
-    eprintln("force push: overriding the remote version.")
+    eprintln(LOG_PREFIX + "force push: overriding the remote version.")
     let force_push_result = @process.run(
       "shareoj",
       [
@@ -352,14 +360,14 @@ async fn GitTransport::push_main(
       @fs.read_text(metadata.0),
     )
 
-    eprintln("shareoj says:")
+    eprintln(LOG_PREFIX + "shareoj says:")
     output = force_push_result.stdout_text()
     let lines = output.split("\n").collect()
     if lines.last() == Some("") {
       let _ = lines.pop()
     }
     for line in lines {
-      eprintln("| \{line}")
+      eprintln(LOG_PREFIX + "| \{line}")
     }
 
     if force_push_result.exit_code != 0 {
@@ -395,9 +403,7 @@ async fn GitTransport::push_main(
     ],
     cwd=self.git_dir.0,
   )
-  eprintln(
-    "git-remote-shareoj: created tag v\{new_version} for the new version.",
-  )
+  eprintln(LOG_PREFIX + "created tag v\{new_version} for the new version.")
 }
 
 ///|
@@ -420,7 +426,7 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
     e => raise GitTransportError::VirtualRepoBroken(e)
   }
 
-  eprintln("Preparing internal repository at: \{temporary_dir}")
+  eprintln(LOG_PREFIX + "preparing internal repository")
   errdefer (@fs.remove(temporary_dir.0, recursive=true, allow_missing=true) catch {
     e => raise GitTransportError::VirtualRepoBroken(e)
   })
@@ -487,10 +493,12 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
   @fs.rename(shareoj_json_path.0, temporary_dir.join(".shareoj.json").0)
   @fs.remove(worktree.0, recursive=true)
 
-  eprintln("Renaming temporary directory to: \{internal_repo_path}")
   @fs.rename(temporary_dir.0, internal_repo_path.0) catch {
     e => raise GitTransportError::VirtualRepoBroken(e)
   }
+  eprintln(
+    LOG_PREFIX + "internal repository prepared at: \{internal_repo_path}",
+  )
 
   internal_repo_path
 }
