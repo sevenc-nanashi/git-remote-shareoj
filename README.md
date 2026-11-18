@@ -5,7 +5,7 @@ ShareOJの問題をGitのプロトコルで扱えるようにするためのremo
 ## インストール
 
 ```bash
-packslip install github.com/sevenc-nanashi/git-remote-shareoj
+packslip install github.com/sevenc-nanashi/git-remote-shareoj --pin ps1_6zqt7bajcjad62rqyrestvo2rm
 ```
 
 ## 使い方
