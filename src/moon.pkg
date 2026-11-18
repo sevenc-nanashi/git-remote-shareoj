@@ -3,12 +3,14 @@ import {
   "moonbitlang/core/async/stdio",
   "moonbitlang/core/async/process",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/encoding/hex",
   "moonbitlang/core/json",
   "moonbitlang/core/path",
   "moonbitlang/core/string",
   "moonbitlang/core/debug",
   "moonbitstack/moonurl",
   "moonbitstack/moonuuid",
+  "moonbitstack/mooncrypt/hash/sha2",
 }
 
 options(

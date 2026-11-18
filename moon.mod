@@ -19,7 +19,7 @@ readme = "README.mbt.md"
 
 repository = ""
 
-license = "Apache-2.0"
+license = "MIT"
 
 keywords = [ ]
 
@@ -30,5 +30,6 @@ description = ""
 import {
   "moonbitstack/moonurl@0.3.0",
   "moonbitstack/moonuuid@0.2.0",
+  "moonbitstack/mooncrypt@0.5.0",
   "moonbitlang/async@0.22.9",
 }

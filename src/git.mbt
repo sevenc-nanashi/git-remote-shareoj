@@ -385,7 +385,7 @@ async fn GitTransport::push_main(
   let new_version = new_shareoj_json.version
 
   let _ = run_git(
-    self.git_dir,
+    internal_git_dir,
     [
       "tag",
       "-a",
@@ -402,9 +402,15 @@ async fn GitTransport::push_main(
 
 ///|
 async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
+  let api_hash = @sha2.hash(
+      @utf8.encode(self.remote.api_host.encode()),
+      kind=Sha256,
+    )
+    |> @hex.encode
   let internal_repo_path = self.git_dir
     .join("shareoj-virtual-remote")
-    .join(self.remote_name)
+    .join(api_hash)
+    .join(self.remote.id.to_string())
   if @fs.exists(internal_repo_path.0) {
     return internal_repo_path
   }

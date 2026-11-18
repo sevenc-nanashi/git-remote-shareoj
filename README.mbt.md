@@ -1,1 +1,0 @@
-# sevenc-nanashi/git-remote-shareoj
