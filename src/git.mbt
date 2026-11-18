@@ -1,10 +1,16 @@
 ///|
+/// shareoj側はmainというブランチ名にする
+/// 将来的にgitconfigで指定できても良いかもだけどとりあえず
+const BRANCH_NAME = "main"
+
+///|
 #derive(Debug)
 suberror GitTransportError {
   UnknownCommand(String)
   EmptyCommand
   InvalidInvocation(String)
   VirtualRepoBroken(Error)
+  ShareOJRejected(Error)
 }
 
 ///|
@@ -12,6 +18,21 @@ suberror GitTransportError {
 struct ShareOjJson {
   version : UInt32
   id : String
+}
+
+///|
+async fn run_git(
+  git_dir : @path.Path,
+  args : Array[String],
+  extra_env~ : Map[String, String] = {},
+  cwd? : StringView,
+  stdout~ : @process.ProcessOutput = Stderr,
+) -> @process.ProcessResult {
+  let env = extra_env.copy()
+  env["GIT_DIR"] = git_dir.0
+  @process.run("git", args, extra_env=env, cwd?, stdout~, stderr=Inherit, accepted_exit_code=e => {
+    e == 0
+  })
 }
 
 ///|
@@ -68,6 +89,35 @@ pub async fn GitTransport::start(self : Self) -> Unit {
         }
         self.fetch(batch)
       }
+      "push" => {
+        let commandlines = [args]
+        while true {
+          let line = (@stdio.stdin.read_until(b"\n").unwrap_or_default()
+          |> @utf8.decode).trim()
+          if line.is_empty() {
+            break
+          }
+          let commandline = line.split(" ").collect()
+          if commandline[0] != "push" {
+            raise GitTransportError::InvalidInvocation(line.to_owned())
+          }
+          commandlines.push(
+            commandline.iter().drop(1).map(StringView::to_owned).collect(),
+          )
+        }
+        let batch = commandlines.map(commandline => {
+          let (source, dst_refname) = commandline[0]
+            .split_once(":")
+            .unwrap_or_error(
+              GitTransportError::InvalidInvocation(commandline.join(" ")),
+            )
+          PushArgs::{
+            source: source.to_owned(),
+            refname: dst_refname.to_owned(),
+          }
+        })
+        self.push(batch)
+      }
       "" => break
       _ => raise GitTransportError::UnknownCommand(command.to_owned())
     }
@@ -83,13 +133,11 @@ async fn GitTransport::capabilities(_self : Self) -> Unit {
 
 ///|
 async fn GitTransport::list_refs(self : Self) -> Unit {
-  let internal_git_dir = self.prepare_internal_repo().join(".git")
-  let refs = @process.run(
-    "git",
+  let internal_git_dir = self.prepare_internal_repo().join("repo.git")
+  let refs = run_git(
+    self.git_dir,
     ["ls-remote", "--symref", internal_git_dir.0],
     stdout=@process.ProcessOutput::Collect,
-    stderr=@process.ProcessOutput::Inherit,
-    accepted_exit_code=e => e == 0,
   )
   let stdout = refs.stdout_text()
   for line in stdout.split("\n") {
@@ -122,21 +170,234 @@ struct FetchArgs {
 
 ///|
 async fn GitTransport::fetch(self : Self, args : Array[FetchArgs]) -> Unit {
-  let internal_git_dir = self.prepare_internal_repo().join(".git")
+  let internal_git_dir = self.prepare_internal_repo().join("repo.git")
 
-  let _ = @process.run(
-    "git",
+  let _ = run_git(
+    self.git_dir,
     ["fetch", "--no-write-fetch-head", "--no-tags", "--", internal_git_dir.0] +
     args.iter().flat_map(arg => [arg.sha1, arg.refname].iter()).collect(),
-    // NOTE: ここだけは元のGIT_DIRでfetchする
-    extra_env={ "GIT_DIR": self.git_dir.0 },
     cwd=self.git_dir.0,
-    stdout=@process.ProcessOutput::Stderr,
-    stderr=@process.ProcessOutput::Inherit,
-    accepted_exit_code=e => e == 0,
   )
 
   write_line("")
+}
+
+///|
+priv struct PushArgs {
+  source : String
+  refname : String
+}
+
+///|
+async fn GitTransport::push(self : Self, args : Array[PushArgs]) -> Unit {
+  for arg in args {
+    if arg.refname != "refs/heads/\{BRANCH_NAME}" {
+      write_line("error \{arg.refname} only main can be pushed")
+      continue
+    }
+    let (source, force) = match arg.source.strip_prefix("+") {
+      Some(source) => (source.to_owned(), true)
+      None => (arg.source, false)
+    }
+    if source.is_empty() {
+      write_line("error \{arg.refname} main cannot be deleted")
+      continue
+    }
+    try {
+      self.push_main(source, force~)
+      write_line("ok \{arg.refname}")
+    } catch {
+      e => {
+        eprintln("git-remote-shareoj: \{@debug.to_string(e)}")
+        write_line("error \{arg.refname} push failed; see stderr")
+      }
+    }
+  }
+  write_line("")
+}
+
+///|
+async fn GitTransport::push_main(
+  self : Self,
+  source : String,
+  force~ : Bool,
+) -> Unit {
+  let internal_repo = self.prepare_internal_repo()
+  let internal_git_dir = internal_repo.join("repo.git")
+  let temporary_dir = @path.Path(internal_repo.0 + ".push")
+
+  // 同じ内部リポジトリへのpushを並行実行しない。
+  @fs.mkdir(temporary_dir.0, allow_existing=false)
+  defer @fs.remove(temporary_dir.0, recursive=true)
+
+  let candidate = temporary_dir.join("tree")
+  @fs.mkdir(candidate.0)
+  let resolved = run_git(
+    self.git_dir,
+    ["rev-parse", "--verify", "--end-of-options", "\{source}^{commit}"],
+    cwd=self.git_dir.0,
+    stdout=Collect,
+  )
+  let commit = resolved.stdout_text().trim().to_owned()
+  let old = run_git(
+      internal_git_dir,
+      ["rev-parse", "refs/heads/\{BRANCH_NAME}"],
+      stdout=Collect,
+    )
+    .stdout_text()
+    .trim()
+    .to_owned()
+  // 参照を更新せずにオブジェクトだけ取り込む。
+  let _ = run_git(internal_git_dir, [
+    "fetch",
+    "--no-write-fetch-head",
+    "--no-tags",
+    "--",
+    self.git_dir.0,
+    commit,
+  ])
+  if !force {
+    let _ = run_git(internal_git_dir, [
+      "merge-base", "--is-ancestor", old, commit,
+    ])
+  }
+  let checkout_env = {
+    "GIT_INDEX_FILE": temporary_dir.join("index").0,
+    "GIT_WORK_TREE": candidate.0,
+  }
+  for
+    command in [
+      ["read-tree", commit],
+      ["checkout-index", "--all", "--prefix=\{candidate.0}/"],
+    ] {
+    let _ = run_git(
+      internal_git_dir,
+      command,
+      extra_env=checkout_env,
+      cwd=internal_repo.0,
+    )
+  }
+  let metadata = candidate.join(".shareoj.json")
+
+  // pushする
+  @fs.remove(metadata.0, allow_missing=true)
+  @fs.write_text(
+    metadata.0,
+    @fs.read_text(internal_repo.join(".shareoj.json").0),
+  )
+
+  let push_result = @process.run(
+    "shareoj",
+    ["push", "--api", self.remote.api_host.encode(), "."],
+    cwd=candidate.0,
+    stdout=Collect,
+    stderr=DuplicateStdout,
+  )
+  @fs.write_text(
+    internal_repo.join(".shareoj.json").0,
+    @fs.read_text(metadata.0),
+  )
+
+  eprintln("shareoj says:")
+  let mut output = push_result.stdout_text()
+  let lines = output.split("\n").collect()
+  if lines.last() == Some("") {
+    let _ = lines.pop()
+  }
+  for line in lines {
+    eprintln("| \{line}")
+  }
+  if push_result.exit_code != 0 {
+    if output.contains("tests require paired input/output files") {
+      eprintln(
+        "hint: you might have to remove `*.out` from your global gitignore, or add `!*.out` to your repository's `.gitignore`",
+      )
+    }
+
+    guard re"version conflict: local ([0-9]+), remote ([0-9]+)".execute(output)
+      is Some(conflict_info) else {
+      raise GitTransportError::ShareOJRejected(
+        Failure("shareoj push failed with exit code \{push_result.exit_code}"),
+      )
+    }
+
+    let old_version : UInt32 = conflict_info.group(1).unwrap()
+      |> @string.from_str
+    let new_version : UInt32 = conflict_info.group(2).unwrap()
+      |> @string.from_str
+    if !force {
+      eprintln("hint: use force push to override the remote version.")
+      raise GitTransportError::ShareOJRejected(
+        Failure("version conflict: local \{old_version}, remote \{new_version}"),
+      )
+    }
+
+    eprintln("force push: overriding the remote version.")
+    let force_push_result = @process.run(
+      "shareoj",
+      [
+        "push",
+        "--api",
+        self.remote.api_host.encode(),
+        "--expect-version",
+        new_version.to_string(),
+        ".",
+      ],
+      cwd=candidate.0,
+      stdout=Collect,
+      stderr=DuplicateStdout,
+    )
+    @fs.write_text(
+      internal_repo.join(".shareoj.json").0,
+      @fs.read_text(metadata.0),
+    )
+
+    eprintln("shareoj says:")
+    output = force_push_result.stdout_text()
+    let lines = output.split("\n").collect()
+    if lines.last() == Some("") {
+      let _ = lines.pop()
+    }
+    for line in lines {
+      eprintln("| \{line}")
+    }
+
+    if force_push_result.exit_code != 0 {
+      raise GitTransportError::ShareOJRejected(
+        Failure(
+          "shareoj push failed with exit code \{force_push_result.exit_code}",
+        ),
+      )
+    }
+  }
+
+  let _ = run_git(internal_git_dir, [
+    "update-ref",
+    "refs/heads/\{BRANCH_NAME}",
+    commit,
+    old,
+  ])
+
+  let new_shareoj_json : ShareOjJson = @json.parse(
+      @fs.read_text(internal_repo.join(".shareoj.json").0),
+    )
+    |> @json.from_json
+  let new_version = new_shareoj_json.version
+
+  let _ = run_git(
+    self.git_dir,
+    [
+      "tag",
+      "-a",
+      "-m",
+      "Auto-generated by git-remote-shareoj",
+      "v\{new_version}",
+    ],
+    cwd=self.git_dir.0,
+  )
+  eprintln(
+    "git-remote-shareoj: created tag v\{new_version} for the new version.",
+  )
 }
 
 ///|
@@ -158,10 +419,12 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
     e => raise GitTransportError::VirtualRepoBroken(e)
   })
 
-  @fs.mkdir(temporary_dir.dirname().0, recursive=true) catch {
+  @fs.mkdir(temporary_dir.0, recursive=true) catch {
     e => raise GitTransportError::VirtualRepoBroken(e)
   }
 
+  let worktree = temporary_dir.join("tree")
+  let internal_git_dir = temporary_dir.join("repo.git")
   let _ = @process.run(
     "shareoj",
     [
@@ -169,51 +432,41 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
       "--api",
       self.remote.api_host.encode(),
       self.remote.id.to_string(),
-      temporary_dir.0,
+      worktree.0,
     ],
     stdout=@process.ProcessOutput::Stderr,
     stderr=@process.ProcessOutput::Inherit,
     accepted_exit_code=e => e == 0,
-  )
+  ) catch {
+    e => raise GitTransportError::ShareOJRejected(e)
+  }
 
-  // NOTE: bare repoにしてもいいけど、結局pushするときのshareoj pushでcheckoutが必要なので、
-  // 普通のrepoにしておく
-  let _ = @process.run(
-    "git",
-    ["init", temporary_dir.0],
-    extra_env={ "GIT_DIR": temporary_dir.join(".git").0 },
-    cwd=temporary_dir.0,
-    stdout=@process.ProcessOutput::Stderr,
-    stderr=@process.ProcessOutput::Inherit,
-    accepted_exit_code=e => e == 0,
+  let _ = run_git(
+    internal_git_dir,
+    ["init", "--bare", "--initial-branch", BRANCH_NAME, internal_git_dir.0],
+    cwd=worktree.0,
   )
 
   // initial commit
-  let _ = @process.run(
-    "git",
+  let _ = run_git(
+    internal_git_dir,
     ["add", "-A"],
-    extra_env={ "GIT_DIR": temporary_dir.join(".git").0 },
-    cwd=temporary_dir.0,
-    stdout=@process.ProcessOutput::Stderr,
-    stderr=@process.ProcessOutput::Inherit,
-    accepted_exit_code=e => e == 0,
+    extra_env={ "GIT_WORK_TREE": worktree.0 },
+    cwd=worktree.0,
   )
-  let shareoj_json_path = temporary_dir.join(".shareoj.json")
+  let shareoj_json_path = worktree.join(".shareoj.json")
   let shareoj_json : ShareOjJson = @fs.read_text(shareoj_json_path.0)
     |> @json.parse
     |> @json.from_json
 
-  let _ = @process.run(
-    "git",
+  let _ = run_git(
+    internal_git_dir,
     ["commit", "-m", "feat: initial commit (version: \{shareoj_json.version})"],
-    extra_env={ "GIT_DIR": temporary_dir.join(".git").0 },
-    cwd=temporary_dir.0,
-    stdout=@process.ProcessOutput::Stderr,
-    stderr=@process.ProcessOutput::Inherit,
-    accepted_exit_code=e => e == 0,
+    extra_env={ "GIT_WORK_TREE": worktree.0 },
+    cwd=worktree.0,
   )
-  let _ = @process.run(
-    "git",
+  let _ = run_git(
+    internal_git_dir,
     [
       "tag",
       "-a",
@@ -221,12 +474,12 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
       "Auto-generated by git-remote-shareoj",
       "v\{shareoj_json.version}",
     ],
-    extra_env={ "GIT_DIR": temporary_dir.join(".git").0 },
-    cwd=temporary_dir.0,
-    stdout=@process.ProcessOutput::Stderr,
-    stderr=@process.ProcessOutput::Inherit,
-    accepted_exit_code=e => e == 0,
+    extra_env={ "GIT_WORK_TREE": worktree.0 },
+    cwd=worktree.0,
   )
+
+  @fs.rename(shareoj_json_path.0, temporary_dir.join(".shareoj.json").0)
+  @fs.remove(worktree.0, recursive=true)
 
   eprintln("Renaming temporary directory to: \{internal_repo_path}")
   @fs.rename(temporary_dir.0, internal_repo_path.0) catch {

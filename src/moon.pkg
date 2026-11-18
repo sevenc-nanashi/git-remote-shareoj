@@ -1,12 +1,12 @@
 import {
-  "moonbitlang/core/argparse",
   "moonbitlang/core/async/fs",
-  "moonbitlang/core/async/http",
   "moonbitlang/core/async/stdio",
   "moonbitlang/core/async/process",
   "moonbitlang/core/encoding/utf8",
-  "moonbitlang/core/path",
   "moonbitlang/core/json",
+  "moonbitlang/core/path",
+  "moonbitlang/core/string",
+  "moonbitlang/core/debug",
   "moonbitstack/moonurl",
   "moonbitstack/moonuuid",
 }
