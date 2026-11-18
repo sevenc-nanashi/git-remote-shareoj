@@ -1,9 +1,4 @@
 ///|
-/// shareoj側はmainというブランチ名にする
-/// 将来的にgitconfigで指定できても良いかもだけどとりあえず
-const BRANCH_NAME = "main"
-
-///|
 /// 出力のprefix
 /// ちゃんとしたロガーを導入しても良いかもしれない
 const LOG_PREFIX = "git-remote-shareoj: "
@@ -51,16 +46,39 @@ async fn[T : Show] write_line(line : T) -> Unit {
 pub struct GitTransport {
   remote : Remote
   remote_name : String
+  branch_name : String
   git_dir : @path.Path
 }
 
 ///|
-pub fn GitTransport::new(
+pub async fn GitTransport::new(
   remote : Remote,
   remote_name : String,
   git_dir : @path.Path,
 ) -> GitTransport {
-  GitTransport::{ remote, remote_name, git_dir, }
+  let branch_name = run_git(
+      git_dir,
+      [
+        "config",
+        "--null",
+        "--default",
+        "main",
+        "--get",
+        "remote.\{remote_name}.shareojBranch",
+      ],
+      stdout=Collect,
+    )
+    .stdout_text()
+    .strip_suffix("\u0000")
+    .unwrap()
+    .to_owned()
+  let _ = run_git(
+    git_dir,
+    ["check-ref-format", "--branch", branch_name],
+    stdout=Collect,
+  )
+  let _ = run_git(git_dir, ["check-ref-format", "refs/heads/\{branch_name}"])
+  GitTransport::{ remote, remote_name, git_dir, branch_name, }
 }
 
 ///|
@@ -196,8 +214,8 @@ priv struct PushArgs {
 ///|
 async fn GitTransport::push(self : Self, args : Array[PushArgs]) -> Unit {
   for arg in args {
-    if arg.refname != "refs/heads/\{BRANCH_NAME}" {
-      write_line("error \{arg.refname} only main can be pushed")
+    if arg.refname != "refs/heads/\{self.branch_name}" {
+      write_line("error \{arg.refname} only \{self.branch_name} can be pushed")
       continue
     }
     let (source, force) = match arg.source.strip_prefix("+") {
@@ -205,11 +223,11 @@ async fn GitTransport::push(self : Self, args : Array[PushArgs]) -> Unit {
       None => (arg.source, false)
     }
     if source.is_empty() {
-      write_line("error \{arg.refname} main cannot be deleted")
+      write_line("error \{arg.refname} \{self.branch_name} cannot be deleted")
       continue
     }
     try {
-      self.push_main(source, force~)
+      self.push_branch(source, force~)
       write_line("ok \{arg.refname}")
     } catch {
       e => {
@@ -222,7 +240,7 @@ async fn GitTransport::push(self : Self, args : Array[PushArgs]) -> Unit {
 }
 
 ///|
-async fn GitTransport::push_main(
+async fn GitTransport::push_branch(
   self : Self,
   source : String,
   force~ : Bool,
@@ -246,7 +264,7 @@ async fn GitTransport::push_main(
   let commit = resolved.stdout_text().trim().to_owned()
   let old = run_git(
       internal_git_dir,
-      ["rev-parse", "refs/heads/\{BRANCH_NAME}"],
+      ["rev-parse", "refs/heads/\{self.branch_name}"],
       stdout=Collect,
     )
     .stdout_text()
@@ -381,7 +399,7 @@ async fn GitTransport::push_main(
 
   let _ = run_git(internal_git_dir, [
     "update-ref",
-    "refs/heads/\{BRANCH_NAME}",
+    "refs/heads/\{self.branch_name}",
     commit,
     old,
   ])
@@ -418,6 +436,26 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
     .join(api_hash)
     .join(self.remote.id.to_string())
   if @fs.exists(internal_repo_path.0) {
+    let internal_git_dir = internal_repo_path.join("repo.git")
+    let current_branch = run_git(
+        internal_git_dir,
+        ["symbolic-ref", "HEAD"],
+        stdout=Collect,
+      )
+      .stdout_text()
+      .trim()
+      .strip_prefix("refs/heads/")
+      .unwrap()
+      .to_owned()
+    if current_branch != self.branch_name {
+      let _ = run_git(internal_git_dir, [
+        "branch",
+        "-m",
+        "--",
+        current_branch,
+        self.branch_name,
+      ])
+    }
     return internal_repo_path
   }
 
@@ -455,7 +493,7 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
 
   let _ = run_git(
     internal_git_dir,
-    ["init", "--bare", "--initial-branch", BRANCH_NAME, internal_git_dir.0],
+    ["init", "--bare", "--initial-branch", self.branch_name, internal_git_dir.0],
     cwd=worktree.0,
   )
 

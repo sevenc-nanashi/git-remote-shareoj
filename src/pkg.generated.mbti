@@ -30,9 +30,10 @@ type FetchArgs
 pub struct GitTransport {
   remote : Remote
   remote_name : String
+  branch_name : String
   git_dir : @path.Path
 }
-pub fn GitTransport::new(Remote, String, @path.Path) -> Self
+pub async fn GitTransport::new(Remote, String, @path.Path) -> Self
 pub async fn GitTransport::start(Self) -> Unit
 
 #derive(@debug.Debug)

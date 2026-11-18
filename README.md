@@ -17,10 +17,11 @@ packslip install github.com/sevenc-nanashi/git-remote-shareoj --pin ps1_6zqt7baj
   - `<problem_uuid_with_optional_name>`は問題のUUID。基本的にパスが全部使われるが、`#`を使うとその`#`より前を無視できる。
   - 例：`shareoj://api.share-oj.net/f503617a-e823-4d4a-a553-cc5fcd27355d`、`shareoj://api.share-oj.net/holiday_or_holic_die#f503617a-e823-4d4a-a553-cc5fcd27355d`
 
-- pushは`refs/heads/main`のみ。
+- ブランチ名はデフォルトで`main`。`remote.<remote>.shareojBranch`で変更できる。
+- pushは設定したブランチのみ。
   - それ以外のブランチは拒否される。
-  - pushする際は、`main`ブランチの先頭のコミットの内容がそのまま問題として登録される。
-  - Web側で更新されていた場合（versionの不一致）は、pushは拒否される。
+  - pushする際は、push対象のコミットの内容がそのまま問題として登録される。
+  - Web側で更新されていた場合（versionの不一致）、pushは拒否される。
     - force-pushでWeb側の内容を上書きできる。
 - タグ`v{revision}`で、過去の`push`の内容を参照できる。
 - pullは基本的に意味がない。
@@ -30,7 +31,7 @@ packslip install github.com/sevenc-nanashi/git-remote-shareoj --pin ps1_6zqt7baj
 - `.git/shareoj-virtual-remote/<api_url>/<problem_uuid>`に、仮想的なリモートリポジトリを作る。
   - 基本的にgitの操作はそのリポジトリに対して行われる。
 - 初期化時に`shareoj pull`し、仮想リポジトリを作る。
-  - そこで`main`ブランチとinitial commitを作り、`.shareoj.json`からバージョンを取得してタグを作る。
+  - そこで設定したブランチとinitial commitを作り、`.shareoj.json`からバージョンを取得してタグを作る。
 - `push`では、内部のリポジトリを更新する前に、一時ディレクトリにpushしようとしている内容を展開して`shareoj push .`する。
   - conflict以外の理由で失敗している場合はpushを拒否する。
   - conflictで失敗している場合はforce-pushでない限りpushを拒否する。
