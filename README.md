@@ -25,7 +25,7 @@ packslip install github.com/sevenc-nanashi/git-remote-shareoj
 - タグ`v{revision}`で、過去の`push`の内容を参照できる。
 - pullは基本的に意味がない。
 
-### 仕組み
+## 仕組み
 
 - `.git/shareoj-virtual-remote/<api_url>/<problem_uuid>`に、仮想的なリモートリポジトリを作る。
   - 基本的にgitの操作はそのリポジトリに対して行われる。
@@ -36,7 +36,7 @@ packslip install github.com/sevenc-nanashi/git-remote-shareoj
   - conflictで失敗している場合はforce-pushでない限りpushを拒否する。
   - 成功した場合は内部のリポジトリを更新する。
 
-## 制約
+### 制約
 
 - ShareOJ CLIの都合上、過去のリビジョンの内容を取得することはできない。
   - このhelperはpush時にタグを作っているので、このhelperで行った操作だけは過去のリビジョンの内容を取得できる。
