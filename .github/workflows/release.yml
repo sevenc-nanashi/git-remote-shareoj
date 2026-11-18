@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without the v prefix (e.g. 0.2.0)
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: v${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Update version
+        run: |
+          git check-ref-format "refs/tags/$TAG"
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag already exists: $TAG" >&2
+            exit 1
+          fi
+          ruby scripts/update_version.rb "$VERSION"
+          moon update
+          # moon check validates the module's SemVer before building or pushing.
+          moon check --target native
+
+      - name: Test and build
+        run: |
+          moon test --target native
+          moon info
+          moon fmt
+          moon build --release --target native
+
+      - name: Package
+        run: |
+          mkdir -p "$RUNNER_TEMP/package" "$RUNNER_TEMP/dist"
+          install -m 755 _build/native/release/build/cmd/main/main.exe "$RUNNER_TEMP/package/git-remote-shareoj"
+          cp README.md LICENSE "$RUNNER_TEMP/package/"
+          tar -C "$RUNNER_TEMP/package" -czf "$RUNNER_TEMP/dist/git-remote-shareoj-linux-x64.tar.gz" \
+            git-remote-shareoj README.md LICENSE
+
+      - name: Commit and push release
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add moon.mod src/cmd/main/version.mbt
+          git commit -m "chore: v$VERSION をリリース" --allow-empty
+          git tag "$TAG"
+          git remote -v
+          git push --atomic origin "HEAD:$GITHUB_REF" "refs/tags/$TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Sign release
+        id: packslip
+        uses: jdx/packslip@v1.11.2
+        with:
+          artifacts: ${{ runner.temp }}/dist/*.tar.gz
+          bin: git-remote-shareoj
+          require: |
+            bin:git
+            bin:shareoj
+          version: ${{ inputs.version }}
+          tag: ${{ env.TAG }}
+          commit: ${{ steps.commit.outputs.sha }}
+          upload: "false"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.packslip.outputs.bundle }}
+        run: |
+          args=(--verify-tag --generate-notes --title "$TAG")
+          version_without_metadata="${VERSION%%+*}"
+          if [[ "$version_without_metadata" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" "${args[@]}" "$RUNNER_TEMP"/dist/*.tar.gz "$BUNDLE"

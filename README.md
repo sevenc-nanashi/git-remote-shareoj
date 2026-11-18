@@ -2,6 +2,12 @@
 
 ShareOJの問題をGitのプロトコルで扱えるようにするためのremote helper。
 
+## インストール
+
+```bash
+packslip install github.com/sevenc-nanashi/git-remote-shareoj
+```
+
 ## 使い方
 
 - リポジトリURLは`shareoj://<api_url>/<problem_uuid_with_optional_name>`の形。

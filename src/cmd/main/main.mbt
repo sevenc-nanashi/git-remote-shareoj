@@ -6,6 +6,7 @@ async fn main {
   try {
     let argv = @env.args()
     if argv.length() < 3 {
+      println("git-remote-shareoj \{VERSION}")
       eprintln("Usage: git-remote-shareoj <remote> <url>")
       @env.exit(1)
     }
