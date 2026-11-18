@@ -16,8 +16,8 @@ pub suberror ParseRemoteError {
 ///|
 /// remote URLを解析する
 /// 仕様メモ：
-/// - `shareoj://<host_and>/<path_to_api>/<id_with_hash>`
-/// - `<host_and>/<path_to_api>`はAPIのホスト名とパスを含む
+/// - `shareoj://<api_host>/<optional_path>/<id_with_hash>`
+/// - APIの接続先はホスト部分のみ。パスは自由に指定でき、APIのURLには含めない
 /// - とりあえずhttps固定（将来的に`?transport=http`みたいにしても良いかも）
 /// - `<id_with_hash>`：もし`#`がついていればそれ以降をIDとして扱う。ついていなければそのままIDとして扱う
 ///   - 主な目的としては`custom_readable_name#uuid`みたいなURLを許容するため
@@ -30,13 +30,12 @@ pub fn Remote::parse_url(url : String) -> Remote raise ParseRemoteError {
     raise ParseRemoteError::InvalidRemote(url)
   }
 
-  let segments = url.path.split("/").collect()
-  let _ = segments.pop()
   let api_host = @moonurl.Url::{
     ..url,
     scheme: Some("https"),
     fragment: None,
-    path: segments.join("/"),
+    path: "",
+    query: None,
   }
   match url.fragment {
     Some(fragment) => {
@@ -62,7 +61,7 @@ pub fn Remote::parse_url(url : String) -> Remote raise ParseRemoteError {
 
 ///|
 test "Remote::parse_url: No friendly name" {
-  let url = "shareoj://api.share-oj.net/83e3462b-3712-4ad6-b42f-eeac499470a8"
+  let url = "shareoj://api.share-oj.net/contest/problems/83e3462b-3712-4ad6-b42f-eeac499470a8"
   let remote = try! Remote::parse_url(url)
   assert_eq(remote.api_host, @moonurl.Url::decode("https://api.share-oj.net"))
   assert_eq(remote.id, @moonuuid.parse("83e3462b-3712-4ad6-b42f-eeac499470a8"))
@@ -70,7 +69,7 @@ test "Remote::parse_url: No friendly name" {
 
 ///|
 test "Remote::parse_url: With friendly name" {
-  let url = "shareoj://api.share-oj.net/custom_readable_name#83e3462b-3712-4ad6-b42f-eeac499470a8"
+  let url = "shareoj://api.share-oj.net/contest/problems/custom_readable_name#83e3462b-3712-4ad6-b42f-eeac499470a8"
   let remote = try! Remote::parse_url(url)
   assert_eq(remote.api_host, @moonurl.Url::decode("https://api.share-oj.net"))
   assert_eq(remote.id, @moonuuid.parse("83e3462b-3712-4ad6-b42f-eeac499470a8"))
