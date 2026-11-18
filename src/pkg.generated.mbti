@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "sevenc-nanashi/git-remote-shareoj"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+  "moonbitlang/core/path",
+  "moonbitstack/moonurl",
+  "moonbitstack/moonuuid",
+}
+
+// Values
+
+// Errors
+#derive(@debug.Debug)
+type GitTransportError
+
+#derive(@debug.Debug)
+pub suberror ParseRemoteError {
+  InvalidUrl(@moonurl.Refused)
+  InvalidRemote(@moonurl.Url)
+  InvalidId(@moonuuid.Refused)
+}
+
+// Types and methods
+#derive(@debug.Debug)
+type FetchArgs
+
+#derive(@debug.Debug)
+pub struct GitTransport {
+  remote : Remote
+  remote_name : String
+  git_dir : @path.Path
+}
+pub fn GitTransport::new(Remote, String, @path.Path) -> Self
+pub async fn GitTransport::start(Self) -> Unit
+
+#derive(@debug.Debug)
+pub struct Remote {
+  api_host : @moonurl.Url
+  id : @moonuuid.Uuid
+}
+pub fn Remote::parse_url(String) -> Self raise ParseRemoteError
+
+#derive(@debug.Debug, @json.FromJson)
+type ShareOjJson
+
+// Type aliases
+
+// Traits

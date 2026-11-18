@@ -13,20 +13,22 @@ name = "sevenc-nanashi/git-remote-shareoj"
 
 version = "0.1.0"
 
+source = "src"
+
 readme = "README.mbt.md"
 
 repository = ""
 
 license = "Apache-2.0"
 
-keywords = []
+keywords = [ ]
 
-preferred_target = "wasm"
+preferred_target = "native"
 
 description = ""
-
 
 import {
   "moonbitstack/moonurl@0.3.0",
   "moonbitstack/moonuuid@0.2.0",
+  "moonbitlang/async@0.22.9",
 }

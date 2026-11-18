@@ -1,0 +1,8 @@
+import {
+  "sevenc-nanashi/git-remote-shareoj" @lib,
+  "moonbitlang/async",
+  "moonbitlang/core/path",
+  "moonbitlang/core/env",
+}
+
+pkgtype(kind: "executable")

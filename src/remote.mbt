@@ -1,4 +1,5 @@
 ///|
+#derive(Debug)
 pub struct Remote {
   api_host : @moonurl.Url
   id : @moonuuid.Uuid
@@ -71,9 +72,6 @@ test "Remote::parse_url: No friendly name" {
 test "Remote::parse_url: With friendly name" {
   let url = "shareoj://api.share-oj.net/custom_readable_name#83e3462b-3712-4ad6-b42f-eeac499470a8"
   let remote = try! Remote::parse_url(url)
-  assert_eq(
-    remote.api_host,
-    @moonurl.Url::decode("https://api.share-oj.net"),
-  )
+  assert_eq(remote.api_host, @moonurl.Url::decode("https://api.share-oj.net"))
   assert_eq(remote.id, @moonuuid.parse("83e3462b-3712-4ad6-b42f-eeac499470a8"))
 }
