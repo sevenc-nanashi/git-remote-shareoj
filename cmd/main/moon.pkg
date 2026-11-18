@@ -1,0 +1,5 @@
+// import {
+//   "sevenc-nanashi/git-remote-shareoj" @lib,
+// }
+
+pkgtype(kind: "executable")

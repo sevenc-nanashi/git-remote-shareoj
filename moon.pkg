@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/argparse",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/http",
+  "moonbitlang/core/async/stdio",
+  "moonbitstack/moonurl",
+  "moonbitstack/moonuuid"
+}
+
+options("allow-experimental-packages": true)
