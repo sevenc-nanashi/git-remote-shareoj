@@ -18,7 +18,6 @@ packslip install github.com/sevenc-nanashi/git-remote-shareoj --pin ps1_6zqt7baj
   - 例：
     - `shareoj://api.share-oj.net/f503617a-e823-4d4a-a553-cc5fcd27355d`
     - `shareoj://api.share-oj.net/sevenc-nanashi/holiday_or_holic_die#f503617a-e823-4d4a-a553-cc5fcd27355d`
-
 - ブランチ名はデフォルトで`main`。`remote.<remote>.shareojBranch`で変更できる。
 - pushは設定したブランチのみ。
   - それ以外のブランチは拒否される。
@@ -44,6 +43,14 @@ packslip install github.com/sevenc-nanashi/git-remote-shareoj --pin ps1_6zqt7baj
 - ShareOJ CLIの都合上、過去のリビジョンの内容を取得することはできない。
   - このhelperはpush時にタグを作っているので、このhelperで行った操作だけは過去のリビジョンの内容を取得できる。
 - 未完成のものをpushできない。
+
+## モチベ
+
+- 必ずgit commitするので、気軽にrevertできる。
+  - （こういうのを使わなくてもcommitしろ？はい...）
+  - 特にAIにテストケース書かせるとかするときに便利（かも？）
+- starshipとかのプロンプトで同期状態がわかるようになる。
+  - 別にこれはstarshipにも限らなくて、例えばVSCodeのGit Extensionとかでもできるはず（どうなんだろう）
 
 ## ライセンス
 
