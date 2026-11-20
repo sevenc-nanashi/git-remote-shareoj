@@ -9,6 +9,16 @@ struct ShareOjJson {
 priv struct InternalRepo {
   repo : @path.Path
   git_dir : @path.Path
+  shareoj_json : @path.Path
+}
+
+///|
+fn InternalRepo::from_root(root : @path.Path) -> InternalRepo {
+  InternalRepo::{
+    repo: root,
+    git_dir: root.join("repo.git"),
+    shareoj_json: root.join(".shareoj.json"),
+  }
 }
 
 ///|
@@ -39,14 +49,11 @@ async fn GitTransport::with_internal_repo(
   defer @fs.File::unlock(file)
 
   let internal_repo = self.prepare_internal_repo()
-  f(InternalRepo::{
-    repo: internal_repo,
-    git_dir: internal_repo.join("repo.git"),
-  })
+  f(internal_repo)
 }
 
 ///|
-async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
+async fn GitTransport::prepare_internal_repo(self : Self) -> InternalRepo {
   let api_hash = @sha2.hash(
       @utf8.encode(self.remote.api_host.encode()),
       kind=Sha256,
@@ -56,6 +63,7 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
     .join("shareoj-virtual-remote")
     .join(api_hash)
     .join(self.remote.id.to_string())
+  let internal_repo = InternalRepo::from_root(internal_repo_path)
   if @fs.exists(internal_repo_path.0) {
     let internal_git_dir = internal_repo_path.join("repo.git")
     let current_branch = run_git(
@@ -77,10 +85,11 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
         self.branch_name,
       ])
     }
-    return internal_repo_path
+    return internal_repo
   }
 
   let temporary_dir = @path.Path(internal_repo_path.0 + ".tmp")
+  let tmp_internal_repo = InternalRepo::from_root(temporary_dir)
   @fs.remove(temporary_dir.0, recursive=true, allow_missing=true) catch {
     e => raise GitTransportError::VirtualRepoBroken(e)
   }
@@ -95,7 +104,9 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
   }
 
   let worktree = temporary_dir.join("tree")
-  let internal_git_dir = temporary_dir.join("repo.git")
+  defer (@fs.remove(worktree.0, recursive=true, allow_missing=true) catch {
+    e => raise GitTransportError::VirtualRepoBroken(e)
+  })
   let _ = @process.run(
     "shareoj",
     [
@@ -113,31 +124,38 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
   }
 
   let _ = run_git(
-    internal_git_dir,
-    ["init", "--bare", "--initial-branch", self.branch_name, internal_git_dir.0],
+    tmp_internal_repo.git_dir,
+    [
+      "init",
+      "--bare",
+      "--initial-branch",
+      self.branch_name,
+      tmp_internal_repo.git_dir.0,
+    ],
     cwd=worktree.0,
   )
 
   // initial commit
   let _ = run_git(
-    internal_git_dir,
+    tmp_internal_repo.git_dir,
     ["add", "-A"],
     extra_env={ "GIT_WORK_TREE": worktree.0 },
     cwd=worktree.0,
   )
-  let shareoj_json_path = worktree.join(".shareoj.json")
-  let shareoj_json : ShareOjJson = @fs.read_text(shareoj_json_path.0)
+  let shareoj_json : ShareOjJson = @fs.read_text(
+      worktree.join(".shareoj.json").0,
+    )
     |> @json.parse
     |> @json.from_json
 
   let _ = run_git(
-    internal_git_dir,
+    tmp_internal_repo.git_dir,
     ["commit", "-m", "feat: initial commit (version: \{shareoj_json.version})"],
     extra_env={ "GIT_WORK_TREE": worktree.0 },
     cwd=worktree.0,
   )
   let _ = run_git(
-    internal_git_dir,
+    tmp_internal_repo.git_dir,
     [
       "tag",
       "-a",
@@ -149,8 +167,9 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
     cwd=worktree.0,
   )
 
-  @fs.rename(shareoj_json_path.0, temporary_dir.join(".shareoj.json").0)
-  @fs.remove(worktree.0, recursive=true)
+  @fs.rename(worktree.join(".shareoj.json").0, tmp_internal_repo.shareoj_json.0) catch {
+    e => raise GitTransportError::VirtualRepoBroken(e)
+  }
 
   @fs.rename(temporary_dir.0, internal_repo_path.0) catch {
     e => raise GitTransportError::VirtualRepoBroken(e)
@@ -159,5 +178,5 @@ async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
     LOG_PREFIX + "internal repository prepared at: \{internal_repo_path}",
   )
 
-  internal_repo_path
+  internal_repo
 }
