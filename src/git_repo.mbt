@@ -6,6 +6,46 @@ struct ShareOjJson {
 }
 
 ///|
+priv struct InternalRepo {
+  repo : @path.Path
+  git_dir : @path.Path
+}
+
+///|
+async fn GitTransport::with_internal_repo(
+  self : Self,
+  f : async (InternalRepo) -> Unit,
+) -> Unit {
+  let root = self.git_dir
+    .join("shareoj-virtual-remote")
+    .join(
+      @sha2.hash(@utf8.encode(self.remote.api_host.encode()), kind=Sha256)
+      |> @hex.encode,
+    )
+    .join(self.remote.id.to_string())
+  let lock_path = @path.Path(root.0 + ".lock")
+  @fs.mkdir(lock_path.dirname().0, recursive=true, allow_existing=true) catch {
+    e => raise GitTransportError::VirtualRepoBroken(e)
+  }
+  let file = @fs.open(
+    lock_path.0,
+    mode=@fs.Mode::ReadOnly,
+    create_mode=@fs.CreateMode::OpenOrCreate,
+  )
+  if !file.try_lock(@fs.Lock::Exclusive) {
+    eprintln(LOG_PREFIX + "waiting for lock on \{lock_path}")
+  }
+  file.lock(@fs.Lock::Exclusive)
+  defer @fs.File::unlock(file)
+
+  let internal_repo = self.prepare_internal_repo()
+  f(InternalRepo::{
+    repo: internal_repo,
+    git_dir: internal_repo.join("repo.git"),
+  })
+}
+
+///|
 async fn GitTransport::prepare_internal_repo(self : Self) -> @path.Path {
   let api_hash = @sha2.hash(
       @utf8.encode(self.remote.api_host.encode()),

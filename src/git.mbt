@@ -11,7 +11,17 @@ suberror GitTransportError {
   InvalidInvocation(String)
   VirtualRepoBroken(Error)
   ShareOJRejected(Error)
-  Conflict(Error)
+}
+
+///|
+impl Show for GitTransportError with fn to_string(self) -> String {
+  match self {
+    UnknownCommand(cmd) => "Unknown command: \{cmd}"
+    EmptyCommand => "Empty command"
+    InvalidInvocation(line) => "Invalid invocation: \{line}"
+    VirtualRepoBroken(e) => "Virtual repository is broken: \{e}"
+    ShareOJRejected(e) => "ShareOJ rejected the push: \{e}"
+  }
 }
 
 ///|

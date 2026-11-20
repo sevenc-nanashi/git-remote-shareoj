@@ -36,6 +36,8 @@ pub struct GitTransport {
 pub async fn GitTransport::new(Remote, String, @path.Path) -> Self
 pub async fn GitTransport::start(Self) -> Unit
 
+type InternalRepo
+
 #derive(@debug.Debug)
 pub struct Remote {
   api_host : @moonurl.Url
